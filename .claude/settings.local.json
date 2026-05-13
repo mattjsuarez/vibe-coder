@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\matts\\\\Documents\\\\projects\\\\real-deal\\\\src\" -Recurse | Where-Object { -not $_.PSIsContainer } | Select-Object FullName)",
+      "Bash(npm run *)",
+      "Bash(npx tsc *)",
+      "WebSearch",
+      "WebFetch(domain:rapidapi.com)",
+      "PowerShell(New-Item *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5173/)",
+      "Bash(git add *)",
+      "Bash(winget install *)",
+      "Bash(winget search *)",
+      "Bash(npx supabase *)"
+    ]
+  }
+}
