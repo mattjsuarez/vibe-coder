@@ -2,6 +2,43 @@
 
 Platform-specific guidance for testing and deploying vibe-coded applications.
 
+## Local Development Setup
+
+**Always test locally before pushing.** Debugging on the production URL means every
+failed fix is a commit + deploy + round-trip. Testing locally collapses that to seconds.
+
+### Static sites (plain HTML/CSS/JS)
+```bash
+# One-off
+npx serve .
+
+# Add to package.json so it's always available
+"scripts": { "start": "npx serve ." }
+```
+Open `http://localhost:3000` (or whatever port `serve` reports), keep it open while
+working, and check it before every commit. This one habit eliminates the entire
+"push, deploy, discover bug, push again" loop.
+
+### Framework apps
+- React / Next.js: `npm run dev`
+- Vue / Nuxt: `npm run dev`
+- Vite: `npm run dev`
+
+### Pre-commit hook (for projects with automated tests)
+```bash
+# .git/hooks/pre-commit
+#!/bin/sh
+npm test
+if [ $? -ne 0 ]; then
+  echo "Tests failed — commit blocked."
+  exit 1
+fi
+```
+Run `chmod +x .git/hooks/pre-commit` after creating it. Every commit now auto-verifies
+correctness without any manual step.
+
+---
+
 ## Universal Testing Checklist
 
 Regardless of what was built, always verify:
