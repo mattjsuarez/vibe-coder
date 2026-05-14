@@ -291,6 +291,18 @@ Use numbered steps. Include decision points and error states.
 Anti-patterns reviewed in Phase 2 and the agreed-upon alternatives. List each flagged
 issue and the resolution decided during the review. (Leave blank if no issues were found.)
 
+## 9.2 Win/Success State
+Define exactly what happens when the user completes the core action:
+- What screen, state, or animation appears?
+- What feedback does the user receive? (message, sound, confetti, etc.)
+- What data is saved or updated at that moment?
+- Is there a share moment, and if so, what does it show?
+
+This section must be filled in before implementation begins. Completion experiences are
+consistently the last thing built and the first thing users remember — a flat or missing
+win state is always noticed. Specifying it here ensures it gets the same design attention
+as everything else.
+
 ## 10. Scope & Constraints
 - Timeline, budget, launch audience
 - Known limitations and trade-offs
@@ -345,21 +357,33 @@ what they're building. Read `references/deployment-guide.md` for platform-specif
 
 The plan should cover:
 
-1. **Smoke Testing** — First things to verify after code generation
-2. **Success State Testing** — Before testing error paths, verify what happens when
+1. **Local Dev Server** — Before testing anything on the deployed URL, set up a local
+   server. For static sites: `npx serve .` or add `"start": "npx serve ."` to
+   `package.json`. For framework apps, the dev server is usually `npm run dev`. The rule:
+   never test a change for the first time on the production URL. Debugging in production
+   means every failed attempt is a commit, a deploy, and a round-trip — local testing
+   collapses that to seconds.
+
+2. **Smoke Testing** — First things to verify after code generation
+3. **Success State Testing** — Before testing error paths, verify what happens when
    everything works: completion screens, celebration animations, stat updates. These are
    often the last thing built and the first thing users remember. If winning feels flat,
    players notice immediately.
-3. **Functional Testing** — How to test each feature from the PRD
-4. **Edge Case Testing** — Based on the risks identified in discovery
-5. **Browser/Device Testing** — What platforms to verify on. Always test at 375px viewport
+4. **Functional Testing** — How to test each feature from the PRD
+5. **Edge Case Testing** — Based on the risks identified in discovery
+6. **Browser/Device Testing** — What platforms to verify on. Always test at 375px viewport
    width (iPhone SE) before declaring any web feature complete — desktop testing misses
    wrapping bugs, tap-target issues, and layout breaks that mobile users hit immediately.
-6. **For Chrome Extensions:** How to load unpacked, test on target sites, prepare for
+7. **For Chrome Extensions:** How to load unpacked, test on target sites, prepare for
    Chrome Web Store submission
-7. **Deployment Options** — Specific to the tech stack (Vercel, Netlify, Chrome Web Store,
+8. **Automated Tests** — If the implementation includes non-trivial logic (recursive
+   functions, state machines, validation rules, scoring), recommend adding an automated
+   test file at the same time the logic is written — not reactively after bugs accumulate.
+   A pre-commit hook that runs tests before every push catches regressions before they
+   reach users and eliminates the "debugging in production" cycle.
+9. **Deployment Options** — Specific to the tech stack (Vercel, Netlify, Chrome Web Store,
    etc.)
-8. **Post-Launch Monitoring** — What to watch for
+10. **Post-Launch Monitoring** — What to watch for
 
 Save this plan to `/mnt/user-data/outputs/[product-name]-launch-plan.md` and present it.
 
@@ -409,3 +433,10 @@ into any embed script from the start.
   all feel like one coherent thread. Reference earlier answers.
 - **Produce artifacts.** Every phase produces a downloadable file. Don't just put things
   inline — create files the user can reference later.
+- **Document non-obvious architectural decisions.** Any time a function serves two
+  purposes, a state shape has a non-obvious constraint, or a design choice was made for
+  a reason that isn't visible in the code — write it as a short inline comment or in a
+  `DECISIONS.md` file. Architecture that isn't documented forces the next conversation
+  (or session) to re-derive it from scratch, adding silent cost to every future debugging
+  cycle. The PRD captures requirements; DECISIONS.md captures the *why* behind
+  implementation choices made after the PRD was written.
