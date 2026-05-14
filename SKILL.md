@@ -86,12 +86,19 @@ comes from a great conversation.
 - What's the vibe? (Minimal, playful, corporate, dark mode, etc.)
 - Any apps or sites whose look you admire?
 - What should the user FEEL when using this?
+- What happens when the user succeeds or completes the core action? What should they feel
+  in that moment? (Catches missing win states, celebration moments, and completion flows
+  that are easy to omit but are what users remember most.)
 
 **6. Scope & Constraints (2-3 questions)**
 - What's your timeline? MVP in a weekend, or months of iteration?
 - Budget for hosting/services? (Free tier only? Willing to pay for Supabase, Vercel, etc.)
 - Is this for you personally, a small group, or a public launch?
 - Do you plan to monetize? How?
+- Do you have a name in mind? Have you checked if the domain (and app-store listing) is
+  available? → Check early. Renaming mid-project while using the app name in localStorage
+  keys, URLs, or database tables breaks existing user data and requires a find-replace
+  across the codebase.
 
 **7. Edge Cases & Risks (2-3 questions)**
 - What's the worst thing that could go wrong?
@@ -109,6 +116,11 @@ comes from a great conversation.
 - Track the question count. If you're at 15 and the idea feels well-understood, you can
   wrap up. If you're at 25 and there are still gaps, keep going.
 - This conversation might span multiple messages over time. That's fine and expected.
+- If the app embeds a dataset, word list, question bank, or any pre-generated content, ask:
+  "How will you ensure quality?" Raw public datasets (dictionaries, trivia corpora, etc.)
+  often include obscure, inappropriate, or edge-case entries that degrade the experience.
+  Plan for a frequency filter, a manual blocklist, or a curation pass during Phase 1 —
+  not after users start reporting bad content.
 
 ---
 
@@ -177,6 +189,21 @@ the user described — don't lecture about problems that don't apply.
   - No horizontal scrolling on mobile unless it is intentional and obvious (e.g., a carousel).
   - Text must be readable without pinch-zooming (minimum 16px base font).
   - Forms should trigger the correct keyboard type (email, number, tel).
+
+**Technical Reliability**
+- Does the app load any third-party SDK (auth, database, analytics) via CDN at startup?
+  → A failed CDN load must not crash the entire app before the UI renders. Guard
+  initialization in a try-catch and make all features that depend on that service optional.
+  The app should degrade gracefully — not show a blank page — when a CDN is slow or blocked.
+- Does any form or action trigger an async operation (API call, database write)?
+  → Without a submitted/in-flight guard, double-tapping Enter or clicking twice can
+  execute the action concurrently, causing duplicate writes or double-counted events.
+  Spec an explicit "submission in progress" flag in the PRD.
+- Does the app use localStorage with keys that include the app name or a working title?
+  → Storage key names must be stable. If the app is renamed later, existing user data
+  (streaks, progress, settings) stored under the old key name becomes orphaned. Define
+  storage key names explicitly in the PRD using a stable identifier, not the current
+  working title.
 
 **Chrome Extension-Specific**
 - Does the extension request more permissions than it needs on install?
@@ -319,16 +346,54 @@ what they're building. Read `references/deployment-guide.md` for platform-specif
 The plan should cover:
 
 1. **Smoke Testing** — First things to verify after code generation
-2. **Functional Testing** — How to test each feature from the PRD
-3. **Edge Case Testing** — Based on the risks identified in discovery
-4. **Browser/Device Testing** — What platforms to verify on
-5. **For Chrome Extensions:** How to load unpacked, test on target sites, prepare for
+2. **Success State Testing** — Before testing error paths, verify what happens when
+   everything works: completion screens, celebration animations, stat updates. These are
+   often the last thing built and the first thing users remember. If winning feels flat,
+   players notice immediately.
+3. **Functional Testing** — How to test each feature from the PRD
+4. **Edge Case Testing** — Based on the risks identified in discovery
+5. **Browser/Device Testing** — What platforms to verify on. Always test at 375px viewport
+   width (iPhone SE) before declaring any web feature complete — desktop testing misses
+   wrapping bugs, tap-target issues, and layout breaks that mobile users hit immediately.
+6. **For Chrome Extensions:** How to load unpacked, test on target sites, prepare for
    Chrome Web Store submission
-6. **Deployment Options** — Specific to the tech stack (Vercel, Netlify, Chrome Web Store,
+7. **Deployment Options** — Specific to the tech stack (Vercel, Netlify, Chrome Web Store,
    etc.)
-7. **Post-Launch Monitoring** — What to watch for
+8. **Post-Launch Monitoring** — What to watch for
 
 Save this plan to `/mnt/user-data/outputs/[product-name]-launch-plan.md` and present it.
+
+---
+
+## Platform Notes: Claude Code on Windows
+
+**PowerShell default encoding corrupts UTF-8 files.** PowerShell 5.1 (the default on
+Windows) reads files without a BOM as Windows-1252, then writes them back as UTF-8. Any
+multi-byte UTF-8 character in the original — em dashes (`—`), arrows (`→`), ellipses (`…`),
+curly quotes — gets double-encoded on the next write.
+
+Symptom: `—` becomes `â€"`, `→` becomes `â†'`, `…` becomes `â€¦`. These appear in the
+rendered UI and — if they land inside JavaScript string literals — cause `SyntaxError` that
+silently blank the page.
+
+**Prevention:** All PowerShell file operations that touch HTML, JS, or CSS should specify
+UTF-8 explicitly:
+
+```powershell
+# Reading
+$content = [System.IO.File]::ReadAllText($path, [System.Text.Encoding]::UTF8)
+
+# Writing (without BOM — preferred for web files)
+[System.IO.File]::WriteAllText($path, $content, [System.Text.UTF8Encoding]::new($false))
+```
+
+**If corruption has already occurred:** Use .NET string replacement with byte-level
+targeting rather than simple text find-and-replace, which may not recognize the corrupted
+multi-byte sequences correctly.
+
+**Note:** This pitfall applies whenever a file-embed script runs on Windows (e.g., a
+PowerShell one-liner that splices a generated data file into `index.html`). Build this
+into any embed script from the start.
 
 ---
 
