@@ -57,6 +57,13 @@ comes from a great conversation.
 - What is this thing in one sentence?
 - What problem does it solve? Who has this problem?
 - What exists today that people use instead? What's wrong with those solutions?
+  → Before going further, do a quick competitive check: are there existing apps, tools, or
+  services that already solve this problem well? If yes, surface it directly: "X already
+  does this — do you know about it? Is your idea different enough to be worth building?"
+  The answer might be "we'd target a niche X ignores", "we'd integrate it differently", or
+  "I didn't know it existed — good catch." All are valid outcomes, but the question must be
+  answered before writing a PRD. An idea that duplicates a polished existing product without
+  a clear differentiation story is a project that will lose users at the moment of comparison.
 - If this succeeds wildly, what does that look like?
 
 **2. Target Users (3-4 questions)**
@@ -95,6 +102,11 @@ comes from a great conversation.
 - Budget for hosting/services? (Free tier only? Willing to pay for Supabase, Vercel, etc.)
 - Is this for you personally, a small group, or a public launch?
 - Do you plan to monetize? How?
+- What's the moat? What would make this hard for someone else to replicate in a weekend?
+  (Unique data, a specific community, a workflow integration, proprietary content, a
+  distinctive algorithm, deep personalization over time?) If there's no good answer, the
+  idea may be viable as a personal tool but fragile as a product — useful to know before
+  investing in a full build.
 - Do you have a name in mind? Have you checked if the domain (and app-store listing) is
   available? → Check early. Renaming mid-project while using the app name in localStorage
   keys, URLs, or database tables breaks existing user data and requires a find-replace
