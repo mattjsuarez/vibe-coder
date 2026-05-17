@@ -117,6 +117,34 @@ comes from a great conversation.
 - Any privacy/security concerns? (Handling user data, API keys, etc.)
 - What happens if usage spikes unexpectedly?
 
+**8. Early Architecture Decisions (flag these now — retrofitting is expensive)**
+
+These aren't features; they're structural decisions that become painful to change once
+code exists. Surface them in Phase 1 so they land in the PRD and get built correctly
+from the start rather than bolted on later.
+
+- **Does the app send any email?** → Choose a transactional provider (Resend, Postmark,
+  SendGrid) now and configure SPF/DKIM/DMARC DNS records before writing a single line of
+  email code. Switching providers mid-build means re-verifying domains and updating every
+  integration point.
+- **What's the analytics plan?** → Privacy-friendly tools (Plausible, Fathom) need no
+  cookie consent and no UI changes. GA4 requires a consent mechanism designed into every
+  screen that loads before consent is given. Decide before the first screen is designed —
+  retrofitting a consent layer into a finished UI is a layout and logic change across the
+  entire app.
+- **Will there be dev / staging / production environments?** → Decide this before the first
+  deploy. Setting up environment separation after weeks of pushing directly to production
+  requires untangling config, secrets, and data that have become coupled to a single env.
+- **How should the app behave when a third-party service is unavailable?** → Define the
+  graceful degradation plan in the PRD. Adding error boundaries and fallback states after
+  the app is built means touching every component that makes an external call.
+- **What happens to user data when an account is deleted?** → Define cascade behavior in
+  the schema before any data exists. Orphaned rows, broken foreign keys, or missing cascade
+  rules discovered after launch require migration surgery on live data.
+- **Will users be able to upload or post content?** → If yes, a DMCA policy and a
+  moderation plan are required before real users arrive. These are not features you add
+  later — they define what the platform is legally responsible for from day one.
+
 ### Conversation Tips
 
 - If the idea is a Chrome extension, dig deep into the browser interaction model: which
@@ -216,6 +244,87 @@ the user described — don't lecture about problems that don't apply.
   (streaks, progress, settings) stored under the old key name becomes orphaned. Define
   storage key names explicitly in the PRD using a stable identifier, not the current
   working title.
+
+**Security & Secrets**
+- Are any API keys, tokens, or credentials referenced in frontend code (JavaScript, HTML)?
+  → Any key in frontend code is public — it will be found and abused. Move all secrets
+  server-side or behind a proxy endpoint before launch. No exceptions.
+- Are .env files committed to version control?
+  → Add .env to .gitignore before the first commit. A secret pushed to GitHub, even
+  briefly and even to a private repo, should be considered compromised and rotated
+  immediately. Remind the user to check `git log` for accidental past commits.
+- Does the app log request bodies, headers, or API responses that might contain tokens or PII?
+  → Strip secrets and sensitive fields before writing to any log. Never log passwords,
+  tokens, credit card numbers, or full API responses from third-party services.
+- Are API responses returning more data than the frontend actually needs?
+  → Audit every API response shape. A user endpoint that returns password hashes, internal
+  flags, or admin-only fields is a data leak. Return only what the client needs.
+
+**Data Privacy & Compliance**
+
+The frame here is not just "protect your users" — it's "protect yourself." The moment you
+collect user data, you are in legal territory. You don't need to be perfect, but you do need
+to not be reckless. A privacy policy and basic data hygiene cost almost nothing to put in
+place; a GDPR enforcement action or a lawsuit from a user whose data was mishandled is a
+different matter entirely.
+
+- Does the app collect any user data — name, email, location, usage patterns, payment info?
+  → If yes, a privacy policy is legally required in most jurisdictions. Don't launch
+  without one. At minimum, document: what is collected, why, how long it's retained,
+  and who it's shared with. PrivacyPolicies.com and Termly offer free generators as a
+  starting point — but read what you publish. Signing your name to a policy you don't
+  understand is its own risk.
+- Do you know exactly where user data lives?
+  → Map every place data flows: your database, auth provider, analytics, error tracking,
+  third-party SDKs. Each is a compliance liability and a breach surface. "It's in Supabase"
+  is not a complete answer — which region? Who has access? What's the retention policy?
+  Not knowing the answer to these questions is the definition of being reckless with
+  user data.
+- Does the app need to comply with GDPR (EU users), CCPA (California), COPPA (under-13s),
+  or other regulations?
+  → If the app is accessible globally and collects data, assume GDPR applies. A working
+  "delete my account and all my data" flow is not optional under GDPR. Don't ship without it.
+
+**Security Headers & Transport**
+- Is the app served over HTTPS in production?
+  → HTTP is not acceptable for any app that handles auth or user data. Most platforms
+  (Vercel, Netlify, Railway) enforce this by default — verify it's not disabled.
+- Are security headers configured?
+  → Run the deployed app through securityheaders.com before launch. At minimum:
+  `Content-Security-Policy`, `X-Frame-Options`, `X-Content-Type-Options`,
+  `Referrer-Policy`. Missing headers are the lowest-effort fix with the highest payoff.
+- Are session cookies set with `HttpOnly`, `Secure`, and `SameSite=Strict` (or `Lax`) flags?
+  → Session cookies without these flags are vulnerable to XSS theft and CSRF attacks.
+
+**OWASP Basics**
+- SQL Injection: Does the app construct database queries by concatenating user input?
+  → Always use parameterized queries or an ORM. Never interpolate user input into a SQL
+  string. This is the most exploited vulnerability class, and it's entirely avoidable.
+- XSS (Cross-Site Scripting): Does the app render user-supplied content as raw HTML?
+  → Escape all user content before rendering. React/Vue/Svelte handle this by default —
+  but watch for explicit bypasses like `dangerouslySetInnerHTML` or `v-html`.
+- Insecure Direct Object References (IDOR): Can a user access another user's data by
+  changing an ID in the URL or request?
+  → Every query for user-scoped data must filter by the authenticated user's ID server-side,
+  not just the ID from the request. Test this manually before launch.
+- Authentication gaps: Are auth-protected routes validated server-side on every request?
+  → Never rely on the frontend to enforce access control. Any route that touches protected
+  data must validate the session token server-side, every time, without exception.
+- Mass Assignment: Does the API accept and write arbitrary fields from the request body?
+  → Explicitly whitelist accepted fields. An endpoint that writes whatever it receives is
+  an easy privilege escalation — a user could write `isAdmin: true` to their own record.
+
+**Rate Limiting & Abuse Prevention**
+- Are endpoints that trigger costly operations rate-limited?
+  → LLM calls, email sends, file uploads, SMS, external API calls with per-call costs —
+  all of these must be rate-limited before launch. Without limits, a single bad actor (or
+  a bug in your own frontend) can exhaust your budget in minutes.
+- Is the login / signup endpoint rate-limited?
+  → Brute-force protection is not optional. Most auth providers (Supabase, Auth0, Clerk)
+  include this — verify it's enabled, not just available.
+- Are file uploads validated for type, size, and content?
+  → Never accept arbitrary uploads without validation. Check MIME type, enforce size limits,
+  and if processing server-side, sandbox the execution environment.
 
 **Chrome Extension-Specific**
 - Does the extension request more permissions than it needs on install?
@@ -319,7 +428,57 @@ as everything else.
 - Timeline, budget, launch audience
 - Known limitations and trade-offs
 
-## 11. Open Questions
+## 11. Security & Compliance Requirements
+
+### 11.1 Data & Privacy
+- Data collected and legal basis for collection
+- Privacy policy: required yes/no, URL or planned location
+- Data retention policy (how long is data kept, and what triggers deletion)
+- User data deletion flow (how a user can request full account + data removal)
+- Applicable regulations: GDPR / CCPA / COPPA / other
+
+### 11.2 Secrets & API Keys
+- List of all third-party API keys and services used
+- Where each secret lives in production (env var, secrets manager, never in frontend)
+- Key rotation plan (who rotates, how often, what breaks if a key is compromised)
+- Confirmation that .env is in .gitignore and no secrets appear in git history
+
+### 11.3 Security Headers & Transport
+- HTTPS enforced in production: yes/no
+- Security headers to configure at launch: Content-Security-Policy, X-Frame-Options,
+  X-Content-Type-Options, Referrer-Policy, Permissions-Policy
+- Cookie flags required: HttpOnly, Secure, SameSite
+
+### 11.4 Auth & Access Control
+- Authentication provider and session management approach
+- Authorization model: who can access what (define roles if applicable)
+- Server-side auth validation on every protected endpoint: yes/no
+- IDOR mitigation: all user-scoped queries filter by authenticated user ID
+
+### 11.5 Rate Limiting
+- List every endpoint or operation with a per-call cost (API fees, email, SMS, storage)
+- Rate limit strategy for each: requests/minute per IP, per user, or both
+- Brute-force protection on login/signup: provider default or custom
+
+## 12. Production Readiness Commitments
+
+Decisions that must be made before coding begins to avoid expensive retrofits later.
+Not all of these require work upfront — but all require a decision upfront.
+
+| Area | Decision | Notes |
+|------|----------|-------|
+| Email provider | [Resend / Postmark / SendGrid / none] | SPF/DKIM/DMARC configured before first send |
+| Analytics | [Plausible / Fathom / GA4 / none] | GA4 requires cookie consent UI; others do not |
+| Cookie consent | [Required / not required] | Required if using GA4 or similar |
+| Error tracking | [Sentry / other / none] | Integrate from day 1 — catches bugs during dev too |
+| Environments | [dev+prod only / dev+staging+prod] | Staging required if migrations touch real data |
+| Cascade/delete behavior | [defined in schema / TBD] | Define before any data exists |
+| Third-party failure handling | [graceful degradation plan] | Defined per integration |
+| Backups | [provider default / custom] | Restore procedure tested before launch |
+| User-generated content | [yes / no] | If yes: DMCA policy and moderation plan required |
+| Terms of Service | [draft exists / not started] | Required before real users |
+
+## 13. Open Questions
 Anything still unresolved from the discovery conversation.
 ```
 
@@ -393,9 +552,135 @@ The plan should cover:
    test file at the same time the logic is written — not reactively after bugs accumulate.
    A pre-commit hook that runs tests before every push catches regressions before they
    reach users and eliminates the "debugging in production" cycle.
-9. **Deployment Options** — Specific to the tech stack (Vercel, Netlify, Chrome Web Store,
-   etc.)
-10. **Post-Launch Monitoring** — What to watch for
+9. **Security Quick Wins via AI** — Before doing any manual verification, run these prompts
+   against your codebase in your AI coding tool. They cost 2 minutes and catch the majority
+   of obvious issues that AI-generated code tends to introduce:
+
+   - `Review my app as a security specialist. Check for strong security headers and a solid
+     baseline security posture. List every issue found and fix the ones you can.`
+
+   - `Review my app against OWASP Top 10 standards. Highlight any vulnerabilities — SQL
+     injection, XSS, broken auth, insecure direct object references, mass assignment, and
+     anything else that applies.`
+
+   - `Check my app for credential and sensitive data leaks. Look for API keys or secrets in
+     frontend code, API responses returning more data than needed, and secrets appearing in
+     logs or error messages.`
+
+   - `Ensure no API keys are exposed in frontend code or network calls. If any are found,
+     move them server-side or behind a proxy and update all callers.`
+
+   - `Review my app for performance, SEO, and accessibility issues. Check Core Web Vitals,
+     meta tags, semantic HTML, color contrast, keyboard navigation, and ARIA labels. Fix
+     what you can and list what needs manual attention.`
+
+   Run each prompt, review the output, and verify the fixes before moving to manual testing.
+   AI tools will miss subtle logic flaws — the manual checklist below is not optional — but
+   this step eliminates the low-hanging fruit first.
+
+10. **Security Verification** — Run this checklist before any public launch:
+   - Confirm no API keys appear in browser DevTools → Network tab or page source
+   - Run the deployed URL through [securityheaders.com](https://securityheaders.com) and
+     resolve any F or D ratings
+   - Test IDOR: log in as User A, attempt to access User B's data by guessing IDs in URLs
+     or request payloads
+   - Attempt SQL injection on any search or filter input: `' OR '1'='1` or `'; DROP TABLE users; --`
+   - Attempt XSS on any field that renders user input back: `<script>alert(1)</script>`
+   - Verify auth-protected routes return 401/403 when accessed without a valid token
+   - Confirm rate limits trigger on login and any endpoint with a per-call cost
+   - Check that .env is in .gitignore and run `git log --all --full-history -- .env` to
+     confirm no secrets were ever committed
+   - Review at least one API response per entity type — confirm no fields are leaking
+     (password hashes, internal flags, other users' data)
+   - Confirm the privacy policy is live and linked from the app footer before launch
+11. **Performance Testing** — Before launch, verify:
+    - Run the deployed URL through [PageSpeed Insights](https://pagespeed.web.dev). Fix any
+      Core Web Vitals issues rated red (LCP, CLS, FID/INP). A score below 70 on mobile is
+      a problem worth solving before users arrive.
+    - Images are compressed and not blocking page load. Use WebP where possible.
+    - No render-blocking scripts in `<head>` that aren't deferred or async.
+    - API response times are acceptable under normal conditions — if a key endpoint takes
+      more than 1-2 seconds, users will notice.
+12. **SEO Basics** — If the app has any public-facing pages:
+    - Each page has a unique `<title>` and `<meta name="description">`.
+    - `<h1>` exists and is meaningful on every page — not a logo, not empty.
+    - Images have descriptive `alt` attributes.
+    - The site is crawlable: no `noindex` left in from development, `robots.txt` is correct.
+    - If applicable, an `og:image` and Open Graph tags are set so link previews look right
+      when shared on social media or messaging apps.
+13. **Accessibility** — Test before launch:
+    - Tab through the entire app using only a keyboard. Every interactive element must be
+      reachable and operable without a mouse.
+    - Run the Chrome DevTools Lighthouse accessibility audit. Resolve any issues rated
+      critical or serious.
+    - Color contrast meets WCAG AA (4.5:1 for normal text, 3:1 for large text). Use
+      [Contrast Checker](https://webaim.org/resources/contrastchecker/) to verify.
+    - Form inputs have associated `<label>` elements — not just placeholder text, which
+      disappears on focus and is invisible to screen readers.
+    - Error messages are specific and describe how to fix the problem, not just that one
+      occurred.
+14. **Production Readiness Checklist** — These don't all need to be built; they all need
+    to be reviewed. Work through each category and resolve or consciously defer each item
+    before considering the app ready for real users.
+
+    *Monitoring & Observability*
+    - Error tracking integrated (Sentry or equivalent) — you should not learn about
+      production crashes from users
+    - Uptime monitoring configured (UptimeRobot, Better Uptime) — alerts when the site
+      goes down
+    - A `/health` endpoint exists and returns 200 — enables monitors and load balancers
+      to verify the app is alive without touching real data
+
+    *Database & Data Integrity*
+    - Automatic backups enabled and a restore has been tested — "backups enabled" and
+      "I can recover my data" are not the same thing until you've actually done a restore
+    - Cascade/delete behavior defined for every foreign key — what happens to a user's
+      posts, sessions, and preferences when their account is deleted?
+    - Indexes exist on columns used in WHERE clauses and JOINs — missing indexes are
+      invisible until the dataset grows
+
+    *Dependencies*
+    - `npm audit` (or equivalent) run and high/critical vulnerabilities resolved
+    - Lock file (`package-lock.json` / `yarn.lock`) committed
+    - No packages with last release older than 2 years and open security issues
+
+    *Forms & Submission Hygiene*
+    - CSRF protection on all state-changing forms — verify it's active, not just assumed
+    - Server-side validation exists independently of client-side validation
+    - Honeypot field or CAPTCHA on every public-facing form — contact, signup, comment
+
+    *Email (if applicable)*
+    - SPF, DKIM, and DMARC DNS records configured and verified
+    - Unsubscribe link in every marketing or notification email — required by CAN-SPAM and GDPR
+    - Transactional email provider in use (Resend, Postmark, SendGrid) — not raw SMTP
+
+    *Legal Completeness*
+    - Terms of Service published and linked from the app
+    - Privacy policy published and linked from the app footer (already required — confirming
+      it's actually live)
+    - Cookie consent banner active if using GA4 or any cookie-setting analytics tool
+    - DMCA policy published if users can upload or post content
+
+    *Reliability*
+    - Third-party service failures return a clean error state, not a blank page or
+      unhandled exception — test by temporarily disabling each integration
+    - HTTP status codes are correct: 404s return 404, 500s return 500, not 200 with an
+      error message in the body
+    - Custom 404 page exists and gives users a path forward
+    - Custom 500 / error page exists and does not expose stack traces to the public
+
+    *Environment Hygiene*
+    - Staging environment exists and was used to validate the deploy before it hit production
+    - Schema migrations were run on staging before production
+    - No hardcoded production URLs, credentials, or environment-specific values in source code
+
+    *Analytics*
+    - Basic analytics in place — you need to know if real users are actually using the
+      product. Plausible and Fathom are privacy-friendly and require no consent banner.
+
+15. **Deployment Options** — Specific to the tech stack (Vercel, Netlify, Chrome Web Store,
+    etc.)
+16. **Post-Launch Monitoring** — What to watch for
 
 Save this plan to `/mnt/user-data/outputs/[product-name]-launch-plan.md` and present it.
 
