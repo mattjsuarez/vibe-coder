@@ -127,6 +127,11 @@ from the start rather than bolted on later.
   SendGrid) now and configure SPF/DKIM/DMARC DNS records before writing a single line of
   email code. Switching providers mid-build means re-verifying domains and updating every
   integration point.
+- **Does the app need a contact form for privacy inquiries?** → If it collects user data,
+  yes. Plan it now. For static sites, Formspree (free tier: 50 submissions/month) handles
+  delivery to your email without a backend. The contact page should be styled to match the
+  app and linked from the footer alongside the privacy policy. Don't forget to confirm your
+  email with Formspree before launch — the form silently fails until you do.
 - **What's the analytics plan?** → Privacy-friendly tools (Plausible, Fathom) need no
   cookie consent and no UI changes. GA4 requires a consent mechanism designed into every
   screen that loads before consent is given. Decide before the first screen is designed —
@@ -239,6 +244,13 @@ the user described — don't lecture about problems that don't apply.
   → Without a submitted/in-flight guard, double-tapping Enter or clicking twice can
   execute the action concurrently, causing duplicate writes or double-counted events.
   Spec an explicit "submission in progress" flag in the PRD.
+- Does any validation or verification call an external API (dictionary check, address
+  validator, phone verification, etc.)?
+  → AI-generated code frequently defaults these to fail-open: `catch { valid = true }`.
+  This means a network error silently accepts whatever the user typed. Always fail-closed
+  instead: on a network error, reset the UI, shake the input, and show "Can't verify —
+  check your connection and try again." Fail-open is a bug that's invisible during
+  development (no network errors on localhost) and surfaces only in production.
 - Does the app use localStorage with keys that include the app name or a working title?
   → Storage key names must be stable. If the app is renamed later, existing user data
   (streaks, progress, settings) stored under the old key name becomes orphaned. Define
@@ -284,6 +296,18 @@ different matter entirely.
   or other regulations?
   → If the app is accessible globally and collects data, assume GDPR applies. A working
   "delete my account and all my data" flow is not optional under GDPR. Don't ship without it.
+- **Do you need a privacy policy, and how will you generate it?**
+  → Paid generators (PrivacyPolicies.com, Termly) often cost $50–$100/year. For a
+  non-commercial or learning project where you know exactly what data the app collects,
+  a hand-crafted policy is a valid, free alternative — and will be more accurate than a
+  generic template. Only use a generator if the project is commercial, handles sensitive
+  data categories, or has complex data flows you can't easily enumerate yourself.
+- **Does GDPR require a way for users to contact you about their data?**
+  → Yes. A contact page for privacy inquiries is required. For static sites with no
+  backend, Formspree (free tier: 50 submissions/month) is the simplest solution — form
+  submissions are delivered to your email, your address stays hidden from source code.
+  Create a separate `contact.html` page styled to match the app. Plan this before launch,
+  not after — it belongs in the PRD alongside the privacy policy.
 
 **Security Headers & Transport**
 - Is the app served over HTTPS in production?
@@ -293,6 +317,26 @@ different matter entirely.
   → Run the deployed app through securityheaders.com before launch. At minimum:
   `Content-Security-Policy`, `X-Frame-Options`, `X-Content-Type-Options`,
   `Referrer-Policy`. Missing headers are the lowest-effort fix with the highest payoff.
+  For static sites deployed to **Vercel**, headers are configured via a `vercel.json` file
+  in the project root — no server code required:
+  ```json
+  {
+    "headers": [{
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Frame-Options", "value": "DENY" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
+        { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=()" },
+        { "key": "Content-Security-Policy", "value": "default-src 'self'; ..." }
+      ]
+    }]
+  }
+  ```
+  Fill in the CSP `value` based on the origins your app actually uses. Note: if all JS
+  is inline (single-file architecture), `script-src` will require `'unsafe-inline'`,
+  which weakens XSS protection. This is acceptable for low-risk tools but should be
+  documented as a known trade-off.
 - Are session cookies set with `HttpOnly`, `Secure`, and `SameSite=Strict` (or `Lax`) flags?
   → Session cookies without these flags are vulnerable to XSS theft and CSRF attacks.
 
@@ -607,7 +651,10 @@ The plan should cover:
     - Images have descriptive `alt` attributes.
     - The site is crawlable: no `noindex` left in from development, `robots.txt` is correct.
     - If applicable, an `og:image` and Open Graph tags are set so link previews look right
-      when shared on social media or messaging apps.
+      when shared on social media or messaging apps. **OG images must be PNG, not SVG** —
+      Twitter/X and several other platforms silently ignore SVG og:image files and show no
+      preview. Authoring in SVG is fine (easier to edit), but export to PNG (1200×630px)
+      before deploying. Free conversion: squoosh.app or cloudconvert.com.
 13. **Accessibility** — Test before launch:
     - Tab through the entire app using only a keyboard. Every interactive element must be
       reachable and operable without a mouse.
@@ -658,8 +705,16 @@ The plan should cover:
     - Terms of Service published and linked from the app
     - Privacy policy published and linked from the app footer (already required — confirming
       it's actually live)
+    - Contact page for privacy inquiries linked from the footer alongside the privacy policy
     - Cookie consent banner active if using GA4 or any cookie-setting analytics tool
     - DMCA policy published if users can upload or post content
+
+    *Static Assets*
+    - Favicon present (SVG favicons work in all modern browsers — a 32×32 SVG with the
+      app initial is sufficient; no ICO file needed)
+    - `robots.txt` present — without it, search engines crawl everything including
+      internal pages like `contact.html` and `privacy.html`. At minimum: `User-agent: *`,
+      `Allow: /`, `Disallow:` for any pages that shouldn't be indexed.
 
     *Reliability*
     - Third-party service failures return a clean error state, not a blank page or
@@ -737,3 +792,13 @@ into any embed script from the start.
   (or session) to re-derive it from scratch, adding silent cost to every future debugging
   cycle. The PRD captures requirements; DECISIONS.md captures the *why* behind
   implementation choices made after the PRD was written.
+- **Single-file HTML is a valid MVP architecture for simple tools.** A single `index.html`
+  with all CSS and JS inline has real advantages: no build step, trivially deployed to
+  Vercel/Netlify by dragging a folder, no dependency management, zero configuration.
+  It's appropriate for games, calculators, single-screen tools, and learning projects.
+  The trade-offs: `unsafe-inline` is required in CSP (weakens XSS protection), the file
+  becomes unwieldy past ~1000 lines, and hot-module reloading isn't available. If the
+  app has more than one distinct "page" or non-trivial business logic that needs testing,
+  split into separate files from the start. When using this architecture on Windows,
+  see the PowerShell UTF-8 encoding note above — inline scripts and styles are
+  particularly vulnerable to double-encoding corruption.
