@@ -116,6 +116,11 @@ comes from a great conversation.
 - What's the worst thing that could go wrong?
 - Any privacy/security concerns? (Handling user data, API keys, etc.)
 - What happens if usage spikes unexpectedly?
+- **If the app has time-based content (daily puzzles, expiring challenges, streaks):** When
+  does the day reset? Local midnight? A specific hour (e.g., 3 AM as a grace period for
+  late-night players)? UTC? All three are different on a phone in New York. Get an explicit
+  answer and put it in the PRD — this decision affects localStorage keys, database queries,
+  streak logic, and what puzzle appears after midnight.
 
 **8. Early Architecture Decisions (flag these now — retrofitting is expensive)**
 
@@ -227,6 +232,11 @@ the user described — don't lecture about problems that don't apply.
   → Users who can't figure out what to do next leave.
 - Is there a clear path to undo destructive actions (delete, disconnect, cancel)?
   → If a user deletes something by accident, can they recover? If not, add confirmation dialogs.
+- **If this app goes to real users (not just personal use):** Is there an in-game way to
+  report problems? Without one, bugs surface through screenshots in group chats or DMs to
+  the creator — low signal, no reproducibility context. A simple "Report a problem" button
+  that captures the current game state alongside the user's description turns "something
+  felt wrong" into an actionable bug report. Spec it in the PRD, not as an afterthought.
 
 **Mobile and Responsive Design**
 - Is this app expected to be used on mobile? If so:
@@ -436,7 +446,9 @@ Use numbered steps. Include decision points and error states.
 
 ## 7. Technical Architecture
 - Platform: [web app / Chrome extension / mobile / etc.]
-- Frontend: [framework, styling approach]
+- Frontend: [framework, styling approach — if dark mode is a goal or likely, specify CSS
+  custom properties for all color tokens. Dark mode then becomes a single
+  `@media (prefers-color-scheme: dark)` variable-override block, not a stylesheet rewrite.]
 - Backend: [if needed — services, database, auth]
 - External APIs/Services: [list with purpose]
 - Data Model: [key entities and relationships]
@@ -761,7 +773,37 @@ Save this plan to `/mnt/user-data/outputs/[product-name]-launch-plan.md` and pre
 
 ---
 
-## Platform Notes: Claude Code on Windows
+## Platform Notes
+
+### JavaScript Date Parsing Gotcha
+
+**`new Date('YYYY-MM-DD')` is UTC midnight, not local midnight.** Any app with date-based
+features — daily content, streaks, expiring access, puzzle rotation — needs to be explicit
+about which clock it's using.
+
+```javascript
+new Date('2025-06-01')              // UTC midnight → 8 PM Eastern on May 31
+new Date('2025-06-01T00:00:00')     // local midnight → correct for most use cases
+```
+
+If you're comparing a stored date string to "today" and using `new Date(dateStr)`, the
+comparison breaks for any user west of UTC from midnight until the UTC day catches up.
+
+**Prevention:** Wherever the code constructs a Date from a `YYYY-MM-DD` string for
+comparison or day-index arithmetic, always append `T00:00:00`:
+
+```javascript
+const epoch = new Date('2025-01-01T00:00:00');
+const today = new Date(todayStr + 'T00:00:00');
+const dayIndex = Math.floor((today - epoch) / 86400000);
+```
+
+This applies to localStorage key comparisons, streak calculations, and anything that derives
+a puzzle or content index from the calendar date.
+
+---
+
+### Claude Code on Windows
 
 **PowerShell default encoding corrupts UTF-8 files.** PowerShell 5.1 (the default on
 Windows) reads files without a BOM as Windows-1252, then writes them back as UTF-8. Any
