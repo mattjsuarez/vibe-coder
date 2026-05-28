@@ -558,6 +558,26 @@ practices distilled from Lovable's official documentation. Lovable prompts shoul
 component-based, use real content (never lorem ipsum), include design buzzwords, and
 build incrementally.
 
+**Every generated prompt must include a simplicity constraint.** Regardless of tool,
+add an explicit instruction block like:
+
+```
+## Simplicity Rules
+- Prefer fewer lines over more. If there are two ways to solve this, pick the simpler one.
+- No speculative abstractions — only build what the current requirements need.
+- Ask "is there a simpler way?" before adding any new layer, helper, or abstraction.
+- Do not refactor or "improve" code that isn't directly related to the current task.
+```
+
+AI coding tools default toward completeness and cleverness. Without this guardrail,
+they over-engineer. This block counteracts that tendency before it starts.
+
+**Suggest subagents for parallel research during implementation.** When handing off the
+prompt, remind the user that during the build they can offload independent research tasks
+to subagents — looking up API documentation, checking library compatibility, exploring
+alternative approaches — to keep the main coding context clean and focused. One subagent
+per task, merge results back with judgement.
+
 Save the generated prompt to `/mnt/user-data/outputs/[product-name]-prompt.md` and
 present it.
 

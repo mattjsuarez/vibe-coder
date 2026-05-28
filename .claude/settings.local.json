@@ -11,7 +11,10 @@
       "Bash(git add *)",
       "Bash(winget install *)",
       "Bash(winget search *)",
-      "Bash(npx supabase *)"
+      "Bash(npx supabase *)",
+      "Bash(npm install *)",
+      "Bash(npx expo *)",
+      "PowerShell(Get-Content *)"
     ]
   }
 }
