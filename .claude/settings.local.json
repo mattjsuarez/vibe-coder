@@ -14,7 +14,10 @@
       "Bash(npx supabase *)",
       "Bash(npm install *)",
       "Bash(npx expo *)",
-      "PowerShell(Get-Content *)"
+      "PowerShell(Get-Content *)",
+      "Read(//c/Users/matts/.claude/projects/C--Users-matts-Documents-projects-vibe-coder/**)",
+      "Bash(Get-ChildItem -Filter \"*.jsonl\" -Depth 0)",
+      "Bash(Select-Object Name, FullName)"
     ]
   }
 }

@@ -154,6 +154,15 @@ from the start rather than bolted on later.
 - **Will users be able to upload or post content?** → If yes, a DMCA policy and a
   moderation plan are required before real users arrive. These are not features you add
   later — they define what the platform is legally responsible for from day one.
+- **Does any operation take more than 2-3 seconds?** (AI/LLM calls, image processing,
+  file conversion, video encoding, etc.)
+  → Long-running operations must never block the client. The pattern: create a job record
+  immediately and return its ID to the client; run the work asynchronously in the
+  background; have the client poll until the record's status changes to "completed" or
+  "failed." Returning a job ID in 200ms and polling for the result is always better UX
+  than a 30-second spinner — especially on mobile where the app can be backgrounded
+  mid-request. Define this pattern in the PRD before any implementation begins.
+  *(Applies to: any app with slow async operations)*
 
 ### Conversation Tips
 
@@ -266,6 +275,14 @@ the user described — don't lecture about problems that don't apply.
   (streaks, progress, settings) stored under the old key name becomes orphaned. Define
   storage key names explicitly in the PRD using a stable identifier, not the current
   working title.
+- Does the app use a polling interval (`setInterval`) to watch for async state changes in
+  a React or React Native component?
+  → React's closure model means the interval callback captures stale state at the moment
+  it was created. State updated after the interval starts will not be visible inside the
+  callback — polls will silently check stale data forever. Fix: store the mutable value in
+  a ref (`useRef`) and update it via `useEffect([state])`; the single stable interval reads
+  from the ref. Alternatively, React Query and SWR have built-in polling that handles this
+  correctly. *(Applies to: React / React Native apps)*
 
 **Security & Secrets**
 - Are any API keys, tokens, or credentials referenced in frontend code (JavaScript, HTML)?
@@ -281,6 +298,15 @@ the user described — don't lecture about problems that don't apply.
 - Are API responses returning more data than the frontend actually needs?
   → Audit every API response shape. A user endpoint that returns password hashes, internal
   flags, or admin-only fields is a data leak. Return only what the client needs.
+- Does the app use any paid-per-call API (OpenAI, Anthropic, Google Maps, Twilio, etc.)?
+  → Set a hard spending limit in the API provider's billing dashboard before writing a
+  single line of code that calls it. Without a cap, a bug in your own code (infinite loop,
+  accidental retry storm, no rate limiting on an endpoint) can exhaust hundreds of dollars
+  in minutes. Set the limit first; raise it deliberately when you understand actual usage.
+- Are you sharing API keys in chat with an AI coding assistant?
+  → Don't. AI chat is not a safe place for secrets — even "just for debugging." If you
+  accidentally paste a key, rotate it immediately. Use environment variables and reference
+  `.env`; never paste the key value itself into a conversation.
 
 **Data Privacy & Compliance**
 
@@ -669,7 +695,7 @@ The plan should cover:
    - Review at least one API response per entity type — confirm no fields are leaking
      (password hashes, internal flags, other users' data)
    - Confirm the privacy policy is live and linked from the app footer before launch
-11. **Performance Testing** — Before launch, verify:
+11. **Performance Testing** — *Web apps only. Skip PageSpeed Insights for native mobile apps (React Native / Expo / iOS / Android).* Before launch, verify:
     - Run the deployed URL through [PageSpeed Insights](https://pagespeed.web.dev). Fix any
       Core Web Vitals issues rated red (LCP, CLS, FID/INP). A score below 70 on mobile is
       a problem worth solving before users arrive.
@@ -677,7 +703,7 @@ The plan should cover:
     - No render-blocking scripts in `<head>` that aren't deferred or async.
     - API response times are acceptable under normal conditions — if a key endpoint takes
       more than 1-2 seconds, users will notice.
-12. **SEO Basics** — If the app has any public-facing pages:
+12. **SEO Basics** — *Web apps only. Skip for native mobile apps (React Native / Expo / iOS / Android) — App Store / Play Store metadata is a separate concern.* If the app has any public-facing pages:
     - Each page has a unique `<title>` and `<meta name="description">`.
     - `<h1>` exists and is meaningful on every page — not a logo, not empty.
     - Images have descriptive `alt` attributes.
@@ -864,3 +890,77 @@ into any embed script from the start.
   split into separate files from the start. When using this architecture on Windows,
   see the PowerShell UTF-8 encoding note above — inline scripts and styles are
   particularly vulnerable to double-encoding corruption.
+
+---
+
+### Supabase
+
+*(Applies to: projects using Supabase as their backend)*
+
+**Tables created via SQL migration don't get automatic grants.** When Supabase creates
+tables through the dashboard UI, it auto-grants privileges to `service_role`, `authenticated`,
+and `anon`. Tables created via SQL migration files do NOT get these grants automatically.
+The result is `42501: permission denied` errors that appear to come from nowhere — often
+during background processing where a service-role client runs. Always add explicit grants
+at the end of every migration that creates tables:
+
+```sql
+grant all on all tables in schema public to service_role;
+grant all on all sequences in schema public to service_role;
+grant select, insert, update, delete on all tables in schema public to authenticated;
+grant all on all sequences in schema public to authenticated;
+grant select on all tables in schema public to anon;
+```
+
+**The Supabase SQL editor corrupts bare `$`-quoted strings.** The editor appends a metadata
+comment after your query — inside a dollar-quoted string, this breaks the parser with a
+cryptic `unterminated dollar-quoted string` error. Use a named delimiter instead:
+
+```sql
+-- Wrong (breaks in Supabase SQL editor):
+create or replace function handle_new_user()
+returns trigger language plpgsql as $$
+  ...
+$$;
+
+-- Right:
+create or replace function handle_new_user()
+returns trigger language plpgsql as $func$
+  ...
+$func$;
+```
+
+**Social auth triggers must handle null email.** Apple Sign In's private relay can return
+a null email address. If your `handle_new_user` trigger inserts into a table with an
+`email NOT NULL` constraint, it fails silently for Apple users — the trigger error is
+swallowed, no user row is created, and the user gets confusing errors downstream (e.g.,
+"no scans remaining," "user not found"). Fix: use `COALESCE(new.email, '')` or make the
+email column nullable. Add `ON CONFLICT DO NOTHING` to guard against duplicate inserts
+from auth retries.
+
+---
+
+### Expo Router (React Native)
+
+*(Applies to: React Native / Expo apps using Expo Router for file-based navigation)*
+
+**Both layout files need explicit `<Redirect>` components for auth guarding.** Expo Router
+caches navigation state, so conditional `Stack.Screen` rendering alone is not enough to
+protect routes — a user who was previously logged in may see tabs before auth is checked.
+The correct pattern:
+
+- `app/(auth)/_layout.tsx`: if session exists → `<Redirect href="/(tabs)" />`
+- `app/(tabs)/_layout.tsx`: if no session → `<Redirect href="/(auth)/sign-in" />`
+
+Without both redirects, users can land on the wrong screen after sign-out, app restart,
+or returning from background.
+
+**Use `scope: 'local'` for sign-out.** `supabase.auth.signOut()` by default attempts to
+invalidate the session server-side. If the server-side session is already expired, the
+call throws and the local session is never cleared — the user appears stuck signed in.
+Always pass `{ scope: 'local' }` to guarantee the local session is wiped regardless of
+server state:
+
+```typescript
+await supabase.auth.signOut({ scope: 'local' });
+```
